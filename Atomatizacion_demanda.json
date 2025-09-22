@@ -1,0 +1,434 @@
+{
+  "name": "Atomatizacion 2.0 demanda/acreedores",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false
+      },
+      "id": "37101004-c89b-4011-8a2b-6b8d326d749d",
+      "name": "Microsoft OneDrive Trigger",
+      "type": "n8n-nodes-base.microsoftOneDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        40
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "fEbJJYHOnSMjBT35",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c3b9cf5f-5f4a-4a88-89ee-de9e9c2b8d91",
+              "leftValue": "={{ $json.name.toLowerCase() }}",
+              "rightValue": ".xlsx",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            },
+            {
+              "id": "f7e8a5c3-d1b2-4c6f-8e9a-1b2c3d4e5f6g",
+              "leftValue": "={{ $json.name.toLowerCase() }}",
+              "rightValue": ".xlsm",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            },
+            {
+              "id": "a1b2c3d4-e5f6-7g8h-9i0j-1k2l3m4n5o6p",
+              "leftValue": "={{ $json.name.toLowerCase() }}",
+              "rightValue": ".xls",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "ce269053-f83d-4940-a3b7-a96605946e55",
+      "name": "Check Excel Files",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $json.id }}"
+      },
+      "id": "a002b28a-b8a3-404d-a778-790d652c3a19",
+      "name": "Download Excel File",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        40
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "fEbJJYHOnSMjBT35",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "headerRow": true,
+          "sheetName": "ACREEDORES"
+        }
+      },
+      "id": "25f69c8a-8540-49d7-9cbd-f6eca786c35b",
+      "name": "Read ACREEDORES Sheet",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [
+        300,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar datos de ACREEDORES basado en la estructura real del Excel \n// Solo procesamos las columnas que NO están marcadas con X roja \nconst acreedoresData = items || []; \nlet totalDeudaOrdinaria = 0; \nlet totalDeudaPrivilegiada = 0; \nlet totalCuotaMensual = 0; \nlet acreedoresValidos = []; \n \nfunction parseNumber(val) { \n  if (val === null || val === undefined) return 0; \n  if (typeof val === 'number') return val; \n  let s = String(val).trim(); \n  if (!s) return 0; \n  \n  // Limpiar símbolos comunes \n  s = s.replace(/€/g, '').replace(/\\s+/g, ''); \n  \n  // Manejar formato europeo (puntos como separadores de miles, comas como decimales) \n  if (/\\d+\\.\\d+,\\d+/.test(s)) { \n    s = s.replace(/\\./g, '').replace(/,/g, '.'); \n  } else if (/\\d+,\\d+/.test(s) && !/\\d+\\.\\d+/.test(s)) { \n    s = s.replace(/,/g, '.'); \n  } \n  \n  s = s.replace(/[^0-9\\.\\-]/g, ''); \n  const n = parseFloat(s); \n  return isNaN(n) ? 0 : n; \n} \n \n// Mapeo de columnas según la imagen del Excel (excluyendo las marcadas con X roja) \n// Columnas a incluir: ACREEDOR, PRODUCTO/TIPO DE DEUDA, DEUDA POR DEUDOR ORDINARIA, CUOTA/MES, PROCEDIMIENTOS JUDICIALES, Fecha solicitud, Fecha Vencimiento, CONTACTO \nfunction mapearColumnas(row) { \n  const keys = Object.keys(row); \n  const valores = keys.map(key => row[key]); \n  \n  // Mapeo basado en posiciones esperadas del Excel \n  return { \n    acreedor: String(valores[0] || '').trim(), // Columna A: ACREEDOR \n    tipoDeuda: String(valores[1] || '').trim(), // Columna B: PRODUCTO/TIPO DE DEUDA \n    deudaOrdinaria: parseNumber(valores[2]), // Columna C: DEUDA POR DEUDOR ORDINARIA \n    deudaPrivilegiada: parseNumber(valores[3]), // Columna D: DEUDA PRIVILEGIADA \n    cuotaMensual: parseNumber(valores[4]), // Columna E: CUOTA/MES \n    // Saltamos columna F (% - marcada con X roja) \n    // Saltamos columna G (Garantía real/personal - marcada con X roja) \n    // Saltamos columna H (Reserva de Dominio - marcada con X roja) \n    // Saltamos columna I (Expedientes de Apremio - marcada con X roja) \n    procedimientosJudiciales: String(valores[10] || '').trim(), // Columna K: PROCEDIMIENTOS JUDICIALES \n    fechaSolicitud: String(valores[11] || '').trim(), // Columna L: Fecha solicitud \n    fechaVencimiento: String(valores[12] || '').trim(), // Columna M: Fecha Vencimiento \n    contacto: String(valores[13] || '').trim() // Columna N: CONTACTO \n  }; \n} \n \n// Procesar cada fila del Excel \nfor (let i = 0; i < acreedoresData.length; i++) { \n  const row = acreedoresData[i].json || {}; \n  const keys = Object.keys(row); \n  \n  // Ignorar filas vacías o que contienen encabezados/totales \n  const firstValue = keys.length > 0 ? String(row[keys[0]] || '').trim() : ''; \n  if (!firstValue || \n      firstValue.toUpperCase().includes('TOTAL') || \n      firstValue.toUpperCase().includes('PASIVO') || \n      firstValue.toUpperCase().includes('CONCEPTOS') || \n      firstValue.toUpperCase().includes('ACREEDOR') || \n      firstValue.toUpperCase().includes('LEASING') || \n      firstValue.toUpperCase().includes('RESERVA') || \n      firstValue.toUpperCase().includes('DETERMINAR')) { \n    continue; \n  } \n  \n  // Mapear columnas según la estructura deseada \n  const datos = mapearColumnas(row); \n  \n  // Solo procesar si hay un acreedor válido \n  if (datos.acreedor && datos.acreedor.length > 0) { \n    // Calcular totales \n    totalDeudaOrdinaria += datos.deudaOrdinaria; \n    totalDeudaPrivilegiada += datos.deudaPrivilegiada; \n    totalCuotaMensual += datos.cuotaMensual; \n    \n    // Parsear información de contacto (formato: NIF:xxx; Domicilio: xxx; tlf: xxx; email: xxx) \n    const contactoInfo = datos.contacto; \n    let nif = '', domicilio = '', telefono = '', email = ''; \n    \n    if (contactoInfo) { \n      const nifMatch = contactoInfo.match(/NIF:([^;]+)/i); \n      const domicilioMatch = contactoInfo.match(/Domicilio:([^;]+)/i); \n      const tlfMatch = contactoInfo.match(/tlf:([^;]+)/i); \n      const emailMatch = contactoInfo.match(/email:([^;]+)/i); \n      \n      nif = nifMatch ? nifMatch[1].trim() : ''; \n      domicilio = domicilioMatch ? domicilioMatch[1].trim() : ''; \n      telefono = tlfMatch ? tlfMatch[1].trim() : ''; \n      email = emailMatch ? emailMatch[1].trim() : ''; \n    } \n    \n    // Crear objeto con los datos filtrados \n    const acreedorData = { \n      nombre: datos.acreedor, \n      tipo_deuda: datos.tipoDeuda, \n      deuda_ordinaria: datos.deudaOrdinaria, \n      deuda_privilegiada: datos.deudaPrivilegiada, \n      cuota_mensual: datos.cuotaMensual, \n      procedimientos_judiciales: datos.procedimientosJudiciales, \n      fecha_solicitud: datos.fechaSolicitud, \n      fecha_vencimiento: datos.fechaVencimiento, \n      nif: nif, \n      domicilio: domicilio, \n      telefono: telefono, \n      email: email, \n      contacto_completo: contactoInfo, \n      fila: i + 1, \n      raw: row \n    }; \n    \n    acreedoresValidos.push(acreedorData); \n  } \n} \n \nconst filename = $('Microsoft OneDrive Trigger').first()?.json?.name || (items[0]?.json?.name) || ''; \nconst totalDeuda = totalDeudaOrdinaria + totalDeudaPrivilegiada; \n \nreturn [{ \n  json: { \n    filename, \n    total_acreedores: acreedoresValidos.length, \n    total_deuda: totalDeuda, \n    total_deuda_ordinaria: totalDeudaOrdinaria, \n    total_deuda_privilegiada: totalDeudaPrivilegiada, \n    total_cuota_mensual: totalCuotaMensual, \n    acreedores: acreedoresValidos, \n    raw_data: acreedoresData.map(it => it.json), \n    processing_timestamp: new Date().toISOString() \n  } \n}];"
+      },
+      "id": "05b5d289-edac-4f74-b2b0-c1d928a27910",
+      "name": "Process ACREEDORES Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        600,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4o-mini",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un experto en derecho concursal español que debe generar una relación de acreedores formal. Debes crear ÚNICAMENTE la lista numerada de acreedores siguiendo EXACTAMENTE el formato proporcionado, sin encabezados ni totales."
+            },
+            {
+              "content": "={{`Basándote en estos datos de acreedores: \n\nArchivo: ${$json.filename || ''} \nTotal Acreedores: ${$json.total_acreedores || 0} \nTotal Deuda: ${$json.total_deuda || 0}€ \nDetalle: ${JSON.stringify($json.acreedores || [], null, 2)} \n\nGenera ÚNICAMENTE la lista de acreedores siguiendo EXACTAMENTE este formato: \n\nACREEDOR: [NOMBRE] - PRODUCTO/TIPO DE DEUDA: [TIPO] - DEUDA POR DEUDOR ORDINARIA: [IMPORTE] € - CUOTA/MES: [IMPORTE] € - PROCEDIMIENTOS JUDICIALES: [PROCEDIMIENTO] \nFecha solicitud: [FECHA] - Fecha Vencimiento: [FECHA] - CONTACTO: NIF:[NIF]; Domicilio: [DOMICILIO]; tlf: [TELÉFONO]; email: [EMAIL] \n\n**INSTRUCCIONES CRÍTICAS:** \n- OMITE completamente cualquier campo que esté vacío, null o undefined (NO incluyas ni el título del campo) \n- Si DEUDA POR DEUDOR ORDINARIA está vacía, NO la incluyas en absoluto \n- Si CUOTA/MES está vacía, NO la incluyas \n- Si PROCEDIMIENTOS JUDICIALES está vacío, NO lo incluyas \n- Si algún dato de CONTACTO está vacío, NO lo incluyas (ej: si no hay NIF, no pongas \"NIF:\") \n- Usa los importes EXACTOS del JSON con formato español (ej: 11.688,35 €) \n- Para fechas vacías, NO las incluyas \n- Mantén EXACTAMENTE el formato de puntuación y espacios del ejemplo \n- NO agregues numeración, encabezados, totales ni texto adicional \n- Cada acreedor debe estar separado por una línea en blanco \n\nEjemplo de salida esperada: \nACREEDOR: EOS SPAIN - PRODUCTO/TIPO DE DEUDA: PRESTAMO - DEUDA POR DEUDOR ORDINARIA: 11.688,35 € - CUOTA/MES: 200 € - PROCEDIMIENTOS JUDICIALES: PROCEDIMIENTO MONITORIO 1363.2024 JUZGADO DE 1ª INSTANCIA E INSTRUCCION Nº1 DE OCAÑA \nFecha solicitud: 11/05/2019 - Fecha Vencimiento: 15/05/2035 - CONTACTO: NIF:0000035; Domicilio: C/ prueba 2 de Madrid; tlf: 987-32-32-32; email: purba@gmail.com \n\nGenera ÚNICAMENTE la lista de acreedores con este formato exacto.`}}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1
+        },
+        "requestOptions": {}
+      },
+      "id": "57866c7e-bc6a-4eb9-ac2d-550f17dbaa3e",
+      "name": "Generate Legal ACREEDORES Text",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        900,
+        40
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "63HyrRkWnpXhHF1B",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraer respuesta IA \n function extractAIContent(nodeJson){ \n   if (!nodeJson) return null; \n   if (nodeJson.choices && nodeJson.choices[0]?.message?.content) return nodeJson.choices[0].message.content; \n   if (nodeJson.choices && typeof nodeJson.choices[0]?.text === 'string') return nodeJson.choices[0].text; \n   if (nodeJson.message && nodeJson.message.content) return nodeJson.message.content; \n   if (typeof nodeJson.output === 'string') return nodeJson.output; \n   if (nodeJson.text) return nodeJson.text; \n   if (nodeJson.body) { \n     if (nodeJson.body.choices && nodeJson.body.choices[0]?.message?.content) return nodeJson.body.choices[0].message.content; \n     if (typeof nodeJson.body.output === 'string') return nodeJson.body.output; \n   } \n   return null; \n } \n \n const aiNode = $('Generate Legal ACREEDORES Text').first(); \n const aiJson = aiNode ? aiNode.json : (items[0] ? items[0].json : null); \n let aiResponseRaw = extractAIContent(aiJson) || ''; \n \n // Formatear números para mostrar con separador de miles y símbolo de euro (formato español) \n function formatCurrency(value) { \n   if (value === null || value === undefined || value === 0) return '0,00 €'; \n   \n   // Convertir a número si es string \n   const num = typeof value === 'string' ? parseFloat(value) : value; \n   if (isNaN(num)) return '0,00 €'; \n   \n   // Formato español: separador de miles punto, decimales coma \n   const formatted = num.toLocaleString('es-ES', { \n     minimumFractionDigits: 2, \n     maximumFractionDigits: 2 \n   }); \n   \n   return formatted + ' €'; \n } \n \n // Procesar la respuesta de la IA para limpiar y formatear \n const processedData = $('Process ACREEDORES Data').first()?.json || {}; \n \n // Limpiar la respuesta de la IA \n let acreedoresLines = aiResponseRaw.trim(); \n // Reemplazar caracteres problemáticos \n acreedoresLines = acreedoresLines.replace(/\\?/g, ' '); \n acreedoresLines = acreedoresLines.replace(/�/g, ''); \n \n // La respuesta de la IA ya viene en el formato correcto: \n // ACREEDOR: EOS SPAIN - PRODUCTO/TIPO DE DEUDA: PRESTAMO - DEUDA POR DEUDOR ORDINARIA: 11.688,35 € - etc. \n // Solo necesitamos limpiarla y usarla directamente \n \n // Crear sección de totales formateada (con formato español) \n const totalesSection = ` \n \n TOTALES: \n Deuda Ordinaria: ${formatCurrency(processedData.total_deuda_ordinaria)} \n Deuda Privilegiada: ${formatCurrency(processedData.total_deuda_privilegiada)} \n Cuota Mensual: ${formatCurrency(processedData.total_cuota_mensual)}`; \n \n // Construir el documento completo con el formato EXACTO requerido \n const documentoCompleto = `RELACIÓN DE ACREEDORES \n \n En cumplimiento de lo dispuesto en la Ley Concursal, el deudor presenta la relación de acreedores con expresión de identidad, domicilio, dirección electrónica (si procede), cuantía y vencimiento de los créditos, garantías constituidas y, en su caso, los procedimientos judiciales iniciados y el estado de los mismos. \n \n ${acreedoresLines} \n ${totalesSection} \n \n PASIVO TOTAL: ${formatCurrency(processedData.total_deuda)}`; \n \n // Crear nombre de archivo con timestamp \n const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0,19); \n const outputFilename = `Relacion_Acreedores_${timestamp}.docx`; \n \n return [{ \n   json: { \n     documento_completo: documentoCompleto, \n     total_deuda: processedData.total_deuda || 0, \n     total_deuda_ordinaria: processedData.total_deuda_ordinaria || 0, \n     total_deuda_privilegiada: processedData.total_deuda_privilegiada || 0, \n     total_cuota_mensual: processedData.total_cuota_mensual || 0, \n     total_acreedores: processedData.total_acreedores || 0, \n     output_filename: outputFilename, \n     source_file: processedData.filename || '', \n     processing_date: new Date().toISOString(), \n     success: true \n   } \n }];"
+      },
+      "id": "d0b84384-58fa-4064-9c6c-669e520403e4",
+      "name": "Create Final Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generador simple de DOCX SIN dependencias externas\nconst documentoCompleto = (items[0].json.documento_completo || '').replace(/\\?/g, ' ');\nconst outputFilename = items[0].json.output_filename || 'Relacion_Acreedores.docx';\n\n// Función para crear un documento DOCX básico\nfunction createSimpleDocx(text) {\n  // Crear un archivo DOCX básico (formato Office Open XML)\n  // Estructura mínima de un DOCX\n  \n  // Contenido del documento\n  const documentText = text.split('\\n').map(line => {\n    if (line.trim() === '') {\n      return '<w:p><w:r><w:t></w:t></w:r></w:p>';\n    } else {\n      return `<w:p><w:r><w:t>${escapeXml(line)}</w:t></w:r></w:p>`;\n    }\n  }).join('');\n  \n  // Archivos XML necesarios para un DOCX básico\n  const files = {\n    '[Content_Types].xml': \n      '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n' +\n      '<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\\n' +\n      '  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\\n' +\n      '  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\\n' +\n      '  <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\\n' +\n      '</Types>',\n    \n    '_rels/.rels': \n      '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n' +\n      '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\\n' +\n      '  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>\\n' +\n      '</Relationships>',\n    \n    'word/document.xml': \n      '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n' +\n      '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\\n' +\n      '  <w:body>\\n' +\n      documentText +\n      '  </w:body>\\n' +\n      '</w:document>',\n    \n    'word/_rels/document.xml.rels': \n      '<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\\n' +\n      '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\\n' +\n      '</Relationships>'\n  };\n  \n  return createZip(files);\n}\n\n// Función para escapar caracteres especiales en XML\nfunction escapeXml(unsafe) {\n  if (!unsafe) return '';\n  return unsafe\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&apos;');\n}\n\n// Función para crear un archivo ZIP (formato base de DOCX)\nfunction createZip(files) {\n  // Esta es una implementación muy básica de ZIP\n  // En un entorno real, se usaría una biblioteca como JSZip\n  \n  // Estructura básica de un archivo ZIP\n  const zipEntries = [];\n  let centralDirectory = [];\n  let offset = 0;\n  \n  // Agregar cada archivo al ZIP\n  Object.keys(files).forEach(filename => {\n    const content = files[filename];\n    const contentBuffer = Buffer.from(content, 'utf8');\n    const contentLength = contentBuffer.length;\n    \n    // Local file header\n    const header = Buffer.from([\n      0x50, 0x4B, 0x03, 0x04, // Firma\n      0x0A, 0x00, // Versión\n      0x00, 0x00, // Flags\n      0x00, 0x00, // Método de compresión (sin compresión)\n      0x00, 0x00, 0x00, 0x00, // Fecha y hora\n      0x00, 0x00, 0x00, 0x00, // CRC32\n      ...intToBytes(contentLength, 4), // Tamaño comprimido\n      ...intToBytes(contentLength, 4), // Tamaño sin comprimir\n      ...intToBytes(filename.length, 2), // Longitud del nombre\n      0x00, 0x00 // Longitud del campo extra\n    ]);\n    \n    const filenameBuffer = Buffer.from(filename, 'utf8');\n    \n    zipEntries.push(Buffer.concat([header, filenameBuffer, contentBuffer]));\n    \n    // Central directory entry\n    const cdEntry = Buffer.from([\n      0x50, 0x4B, 0x01, 0x02, // Firma\n      0x14, 0x00, // Versión\n      0x0A, 0x00, // Versión necesaria\n      0x00, 0x00, // Flags\n      0x00, 0x00, // Método de compresión\n      0x00, 0x00, 0x00, 0x00, // Fecha y hora\n      0x00, 0x00, 0x00, 0x00, // CRC32\n      ...intToBytes(contentLength, 4), // Tamaño comprimido\n      ...intToBytes(contentLength, 4), // Tamaño sin comprimir\n      ...intToBytes(filename.length, 2), // Longitud del nombre\n      0x00, 0x00, // Longitud del campo extra\n      0x00, 0x00, // Longitud del comentario\n      0x00, 0x00, // Número de disco\n      0x00, 0x00, // Atributos internos\n      0x00, 0x00, 0x00, 0x00, // Atributos externos\n      ...intToBytes(offset, 4) // Offset del archivo local\n    ]);\n    \n    centralDirectory.push(Buffer.concat([cdEntry, filenameBuffer]));\n    offset += header.length + filenameBuffer.length + contentBuffer.length;\n  });\n  \n  // End of central directory record\n  const eocd = Buffer.from([\n    0x50, 0x4B, 0x05, 0x06, // Firma\n    0x00, 0x00, // Número de disco\n    0x00, 0x00, // Disco donde comienza el directorio central\n    ...intToBytes(centralDirectory.length, 2), // Número de entradas en este disco\n    ...intToBytes(centralDirectory.length, 2), // Número total de entradas\n    ...intToBytes(Buffer.concat(centralDirectory).length, 4), // Tamaño del directorio central\n    ...intToBytes(offset, 4), // Offset del directorio central\n    0x00, 0x00 // Longitud del comentario\n  ]);\n  \n  // Combinar todo\n  return Buffer.concat([\n    ...zipEntries,\n    ...centralDirectory,\n    eocd\n  ]);\n}\n\n// Función auxiliar para convertir un entero a bytes\nfunction intToBytes(num, size) {\n  const bytes = [];\n  for (let i = 0; i < size; i++) {\n    bytes.push(num & 0xFF);\n    num = num >> 8;\n  }\n  return bytes;\n}\n\n// Crear el documento DOCX\nconst docxBuffer = createSimpleDocx(documentoCompleto);\n\nreturn [{\n  json: {\n    docx_generated: true,\n    document_content: documentoCompleto,\n    output_filename: outputFilename,\n    source_file: items[0].json.source_file || '',\n    total_deuda: items[0].json.total_deuda || null,\n    total_acreedores: items[0].json.total_acreedores || null,\n    processing_date: items[0].json.processing_date || new Date().toISOString()\n  },\n  binary: {\n    data: {\n      data: docxBuffer.toString('base64'),\n      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\n      fileName: outputFilename\n    }\n  }\n}];"
+      },
+      "id": "bf2264f8-951b-4f22-93f7-f32c848a96ff",
+      "name": "Generate DOCX Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1580,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 1. Detección Automática\n**OneDrive Trigger** detecta archivos Excel (.xlsx, .xlsm, .xls)",
+        "height": 100,
+        "width": 300
+      },
+      "id": "ce1794c8-7e71-428e-a5ac-6a516ac88463",
+      "name": "Note - Trigger",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. Procesamiento ACREEDORES\n**IF Check** → **Download** → **Read Sheet** → **Process Data**",
+        "height": 100,
+        "width": 600
+      },
+      "id": "bbdfabd5-dd6c-4616-8991-15f3c0207757",
+      "name": "Note - Processing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. Generación Legal\n**IA Legal** → **Create Document Template**",
+        "height": 100,
+        "width": 400
+      },
+      "id": "bd80779d-0e44-44b2-bdac-5777da841900",
+      "name": "Note - AI Analysis",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4. Generación DOCX **Create Final Document** → **Generate DOCX Document** → **Upload Document**",
+        "height": 100,
+        "width": 600
+      },
+      "id": "6bd112bd-7a53-464d-8d88-5c825e767969",
+      "name": "Note - DOCX Generation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 5. Notificación\n**Email Outlook** con documento",
+        "height": 100,
+        "width": 200
+      },
+      "id": "0e0fda24-4eba-4f51-aeaf-c4a3a3e652c8",
+      "name": "Note - Notification",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "toRecipients": "jfigueiramalave@gmail.com",
+        "subject": "✅ RELACIÓN DE ACREEDORES Generada - {{ $('Generate DOCX Document').item.json.source_file }}",
+        "bodyContent": "La Relación de Acreedores se ha generado exitosamente.\n\n📊 **RESUMEN:**\n- Total de Acreedores: {{ $('Generate DOCX Document').item.json.total_acreedores }}\n- PASIVO TOTAL: {{ $('Generate DOCX Document').item.json.total_deuda.toLocaleString('es-ES') }}€\n\n📁 **Documento:** {{ $('Generate DOCX Document').item.json.output_filename }}\n🕐 **Procesado:** {{ $('Generate DOCX Document').item.json.processing_date }}\n\n**CONTENIDO DEL DOCUMENTO:**\n\n{{ $('Generate DOCX Document').item.json.document_content }}\n\n---\nConsulte OneDrive para descargar el documento DOCX.\n\nSistema de Automatización Legal N8N",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        2380,
+        40
+      ],
+      "id": "9bcbb222-cf19-4c47-b583-dd562df44eb6",
+      "name": "Mensaje de Éxito",
+      "webhookId": "3fb937d7-4a1b-445d-8b8b-64b6ad6d86b7",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "J0dfPaOaB4cnAUmZ",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.output_filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1llSZCKMvdD_jaPatGer-ME5ExJIZCS3R",
+          "mode": "list",
+          "cachedResultName": "Puebas",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1llSZCKMvdD_jaPatGer-ME5ExJIZCS3R"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1920,
+        40
+      ],
+      "id": "022ffd65-545d-4669-bec0-f6c82e0f680e",
+      "name": "Upload file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "PHeSvHwMjtsp6GZ1",
+          "name": "Google Drive account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Microsoft OneDrive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Excel Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Excel Files": {
+      "main": [
+        [
+          {
+            "node": "Download Excel File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Excel File": {
+      "main": [
+        [
+          {
+            "node": "Read ACREEDORES Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read ACREEDORES Sheet": {
+      "main": [
+        [
+          {
+            "node": "Process ACREEDORES Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process ACREEDORES Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Legal ACREEDORES Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Legal ACREEDORES Text": {
+      "main": [
+        [
+          {
+            "node": "Create Final Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Final Document": {
+      "main": [
+        [
+          {
+            "node": "Generate DOCX Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate DOCX Document": {
+      "main": [
+        [
+          {
+            "node": "Upload file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload file": {
+      "main": [
+        [
+          {
+            "node": "Mensaje de Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "86b85206-147a-46e5-ab28-723969849c72",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "bd84d98e1bd871028f134d43cf09d51b850997939b6575d0f11d97502d6aec9d"
+  },
+  "id": "iTeITBFUMdF8tUnd",
+  "tags": []
+}
